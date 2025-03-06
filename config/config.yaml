@@ -1,0 +1,38 @@
+# Percorsi dei file
+paths:
+  menus_dir: "../Hackapizza_Dataset/Menu/"
+  codice_galattico: "../Hackapizza_Dataset/Codice_Galattico/codice_galattico.pdf"
+  manuale_cucina: "../Hackapizza_Dataset/Misc/manuale_di_cucina.pdf"
+  tecniche_di_cottura: "../Hackapizza_Dataset/Misc/tecniche_di_cottura.csv"
+  blogposts_dir: "../Hackapizza_Dataset/Blogpost/"
+  distances: "../Hackapizza_Dataset/Misc/Distanze.csv"
+  dish_mapping: "../Hackapizza_Dataset/Misc/dish_mapping.json"
+  questions: "Hackapizza_Dataset/domande.csv"
+  output: "output/risultati.csv"
+
+# Configurazione Qdrant
+qdrant:
+  host: "localhost"
+  port: 6333
+  collection_name: "VegaMind"
+  metric: "cosine"
+
+embedding:
+  model: "all-MiniLM-L6-v2"
+  chunk_size: 512 
+  chunk_overlap: 100
+  add_instruction: false
+
+# Configurazione API Groq Cloud
+groq:
+  api_key: "xxx"
+  model: "deepseek-r1-distill-llama-70b"
+
+# Configurazione API Google Gemini
+google:
+  api_key: "xxx"
+  model: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key="
+
+# Parametri dell'agent
+agent:
+  top_k_results: 30
