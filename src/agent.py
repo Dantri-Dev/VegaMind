@@ -15,7 +15,7 @@ class VegaMindAgent:
         self.tools = tools
         
         # Configura il logging
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
         
         print("\n[INIT] Caricamento della configurazione...\n")
@@ -60,6 +60,7 @@ class VegaMindAgent:
         - "Quali piatti contengono Erba Pipa?" → generate_filters
         - "Quali piatti usano tecniche di Sirius Cosmo?" → generate_filters_sirius
         - "Quali piatti sono preparati su Asgard?" → generate_filters
+        - Se non richiesta non fa riferimento a generate_filters o generate_filters_sirius allora rispondi → none
 
         **Esempi di output:**
         ```json
@@ -70,6 +71,11 @@ class VegaMindAgent:
         ```json
         {{
             "tool": "generate_filters_sirius"
+        }}
+        ```
+        ```json
+        {{
+            "tool": "none"
         }}
         ```
 
@@ -134,21 +140,36 @@ class VegaMindAgent:
             print(f"[OK] {len(search_result)} documenti trovati!\n")
         except Exception as e:
             print(f"[ERRORE] Errore durante la ricerca con filtri: {e}")
-            return ""
+            return "", ""  # Restituisci due stringhe vuote in caso di errore
 
-        # Estrai i nomi dei piatti dai risultati
+       # Estrai i nomi dei piatti, ingredienti e tecniche dai risultati
         dish_names = set()  # Usiamo un set per evitare duplicati
+        ingredients = set()  # Set per evitare duplicati negli ingredienti
+        techniques = set()  # Set per evitare duplicati nelle tecniche
+
         for result in search_result:
             if "dish" in result.payload:
                 dish_names.add(result.payload["dish"])
+            if "ingredients" in result.payload:
+                ingredients.update(result.payload["ingredients"])  # Aggiungi gli ingredienti al set
+            if "techniques" in result.payload:
+                techniques.update(result.payload["techniques"])  # Aggiungi le tecniche al set
 
-        # Converti il set in una stringa separata da virgole
+        # Converti i set in stringhe separate da virgole
         dish_names_str = ", ".join(dish_names)
+        ingredients_str = ", ".join(ingredients)  # Unisci gli ingredienti in una stringa separata da virgole
+        techniques_str = ", ".join(techniques)  # Unisci le tecniche in una stringa separata da virgole
+
         print(f"[STEP] Nomi dei piatti estratti: {dish_names_str}\n")
+        print(f"[STEP] Ingredienti estratti: {ingredients_str}\n")
+        print(f"[STEP] Tecniche estratte: {techniques_str}\n")
 
         # Normalizza i nomi dei piatti
         dishes = [dish.strip() for dish in dish_names_str.split(',') if dish.strip()]
-        return dishes
+
+        return dishes, ingredients_str, techniques_str
+
+
     
     def build_qdrant_filter(self, filters):
         """Costruisce un filtro Qdrant basato sui filtri generati dal modello LLM, gestendo sia AND che OR."""
@@ -401,7 +422,7 @@ class VegaMindAgent:
         print("[OK] ID piatti trovati:", dish_ids, "\n")
         return dish_ids
 
-    def process_query(self, row_id, query):
+    def process_query(self, row_id, query, chat=False):
         """Elabora una query e restituisce il risultato finale."""
         
         time.sleep(10)
@@ -412,21 +433,135 @@ class VegaMindAgent:
         selected_tool = self.decide_tool(query)
         print("selected_tool", selected_tool)
 
-        # Eseguiamo il tool selezionato
+        # Verifica se il tool selezionato è None
+        if not selected_tool or selected_tool == 'none':
+            logging.debug(f"Selected tool is None. Proceeding with empty parameters.")
+            
+            # Se il tool selezionato è None, gestisci il caso senza filtro
+            if chat:
+                response = self.get_dish_response(query, dishes="", ingredients_str="", techniques_str="")
+                logging.debug(f"Response from get_dish_response: {response}")
+                return {
+                    "success": True,
+                    "result": response
+                }
+            
+            logging.debug(f"No filters found for the request.")
+            return {
+                "success": False,
+                "result": "Nessun filtro trovato per la tua richiesta."
+            }
+
+        # Se il tool è stato selezionato, esegui il tool
+        logging.debug(f"Selected tool: {selected_tool}")
         filters = self.tools[selected_tool].execute(query)
-        print(f"[STEP] Filtri generati: {filters}\n")
+        logging.debug(f"Filtri generati: {filters}")
 
-        # Recupero contesto basato sulla query e sui filtri
-        dish_names = self.retrieve_relevant_context(filters)
+        # Se i filtri sono vuoti, restituisci un messaggio di errore
+        if not filters:
+            logging.debug(f"No filters generated, returning error.")
+            return {
+                "success": False,
+                "result": "Nessun filtro generato per la tua richiesta."
+            }
 
-        # Conversione in ID
+        # Recupero contesto basato sui filtri
+        dish_names, ingredients_str, techniques_str = self.retrieve_relevant_context(filters)
+        logging.debug(f"Dish names: {dish_names}, Ingredients: {ingredients_str}, Techniques: {techniques_str}")
+
+        # Logica per la chat
+        if chat:
+            if dish_names:
+                response = self.get_dish_response(query, dish_names, ingredients_str, techniques_str)
+                logging.debug(f"Response with dishes found: {response}")
+            else:
+                response = "Mi dispiace, non ho trovato piatti correlati alla tua richiesta."
+                logging.debug(f"No dishes found, response: {response}")
+            
+            return {
+                "success": True,
+                "result": response
+            }
+
+        # Se non è chat, trattiamo la conversione in ID
         dish_ids = self.get_dish_ids(dish_names)
+        logging.debug(f"Dish IDs: {dish_ids}")
 
-        print("[PROCESS] Elaborazione completata! Risultato finale:", dish_ids, "\n")
+        if not dish_ids:
+            logging.debug(f"No dish IDs found, returning error.")
+            return {
+                "success": False,
+                "result": "Nessun piatto trovato."
+            }
+
+        logging.debug(f"[PROCESS] Elaborazione completata! Risultato finale: {dish_ids}")
+
         return {
             "row_id": row_id,
             "result": ",".join(dish_ids)
         }
+        
+    def get_dish_response(self, query, dishes, ingredients_str, techniques_str):
+        """Genera una risposta confermando la richiesta dell'utente sui piatti cercati, includendo descrizioni, ingredienti e tecniche."""
+
+        # Se c'è un solo piatto, struttura la risposta al singolare
+        if isinstance(dishes, str):
+            # Costruzione della risposta per un singolo piatto
+            response_text = f"Certo! Ecco il piatto che cercavi: {dishes}."
+            if ingredients_str:
+                response_text += f" Ingredienti: {ingredients_str}."
+            if techniques_str:
+                response_text += f" Tecniche: {techniques_str}."
+
+        # Se ci sono più piatti, struttura la risposta al plurale
+        elif isinstance(dishes, list):
+            dish_details = []
+            for dish in dishes:
+                details = f"{dish}"
+                # Aggiungi ingredienti e tecniche per ogni piatto
+                if ingredients_str:
+                    details += f" Ingredienti: {ingredients_str}."
+                if techniques_str:
+                    details += f" Tecniche: {techniques_str}."
+                dish_details.append(details)
+            response_text = f"Ecco qui i piatti che mi hai chiesto: {', '.join(dish_details)}."
+
+        # Se non c'è nessun piatto trovato
+        if not dishes:
+            response_text = "Mi dispiace, non ho trovato esattamente il piatto che cerchi. Forse intendevi qualcosa di simile? Puoi riformulare la richiesta?"
+
+        # Prompt
+        prompt = f"""
+        Sei un assistente esperto in cucina. Il tuo compito è confermare la richiesta dell'utente riguardo ai piatti culinari e fornire una risposta chiara ed efficace.
+
+        ### ISTRUZIONI:
+        - Se l'utente ha chiesto un solo piatto e lo riconosci, conferma la richiesta in modo naturale, ad esempio: "{response_text}"
+        - Se l'utente ha chiesto più piatti, elencali in modo fluido e naturale, includendo ingredienti e tecniche quando disponibili.
+        - Se non riconosci il piatto, riformula la richiesta per cercare di chiarire cosa sta cercando l'utente.
+        - Non rispondere a domande che non siano legate al campo culinario. Se l'utente pone una domanda fuori tema, rifiuta educatamente e informa che il tuo campo di competenza è solo la cucina.
+        - Mantieni un tono professionale ma amichevole.
+
+        ---
+        **Utente chiede:** {query}
+        **Risposta:** "{', '.join(dishes)}"
+        """
+
+
+        # Chiamata al modello per generare la risposta
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+
+        # Estrai la risposta dal modello
+        response_content = response.choices[0].message.content.strip()
+        
+        # Rimuovi eventuali tag <think>...</think>
+        if "<think>" in response_content and "</think>" in response_content:
+            response_content = response_content.split("</think>")[-1].strip()
+
+        return response_content
 
     # Mi sarebbe piaciuto effettuare un check intermedio per validare la risposta.
     # Una sorta di "2 Step Verification", ma non ci sono arrivato con i tempi e ho inserito tutte le istruzioni nel prompt principale.
