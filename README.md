@@ -1,6 +1,15 @@
-## VegaMind Project
-This FastAPI application provides an API for processing natural language queries using a VegaMind agent with vector search capabilities through Qdrant.<br>
-This project was developed for Hackapizza 2025 🍕 - Community Edition
+## VegaMind: An AI Assistant for Intergalactic Explorers
+This FastAPI application provides an API for processing natural language queries using the **VegaMind** agent, which leverages vector search through **Qdrant**.
+It enables advanced **search and filtering** capabilities to retrieve dishes based on specific ingredients, techniques, and contextual information.  
+<br>
+<p align="center">
+  This project was developed for <strong>Hackapizza 2025 🍕 - Community Edition</strong>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/9f9faf09-72ae-4747-9f5f-ff92e52b8e34" alt="Screenshot" width="480">
+</p>
+
 
 ## Overview
 
