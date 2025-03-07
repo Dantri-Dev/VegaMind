@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException
-import argparse
 import os
 import yaml
 import pandas as pd
@@ -18,7 +17,10 @@ import logging
 # Inizializzazione dell'app FastAPI
 app = FastAPI()
 
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+# Configura il logger
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 # Modello Pydantic per la richiesta della query
 class QueryRequest(BaseModel):
     query: str
@@ -29,29 +31,28 @@ class QueryResponse(BaseModel):
 
 # Funzione per elaborare una singola query
 def process_single_query(query: str) -> str:
-    # Carica la configurazione
-    with open("config/config.yaml", 'r') as f:
-        config = yaml.safe_load(f)
+    try:
+        # Inizializza i gestori
+        qdrant_handler = QdrantHandler()
 
-    # Inizializza i gestori
-    embedding_handler = EmbeddingHandler()
-    qdrant_handler = QdrantHandler()
+        # Inizializza i tool che VegaMindAgent può usare
+        tool_1 = ToolGenerateFilters()
+        tool_2 = ToolGenerateFiltersSirius()
 
-    # Inizializza i tool che VegaMindAgent può usare
-    tool_1 = ToolGenerateFilters()
-    tool_2 = ToolGenerateFiltersSirius()
+        # Inizializza l'agent
+        agent = VegaMindAgent(
+            tools={"generate_filters": tool_1, "generate_filters_sirius": tool_2},
+            qdrant_handler=qdrant_handler
+        )
 
-    # Inizializza l'agent
-    agent = VegaMindAgent(
-        tools={"generate_filters": tool_1, "generate_filters_sirius": tool_2},
-        qdrant_handler=qdrant_handler
-    )
+        # Elabora la query e ottieni il risultato
+        result = agent.process_query(0, query, True)
 
-    # Elabora la query e ottieni il risultato
-    result = agent.process_query(0, query)
-
-    # Restituisci solo la parte 'result' del dizionario
-    return result['result']
+        # Restituisci solo la parte 'result' del dizionario
+        return result['result']
+    except Exception as e:
+        logger.error(f"Errore durante l'elaborazione: {e}")
+        raise
 
 # Endpoint per elaborare una singola query
 @app.post("/process_query/", response_model=QueryResponse)
@@ -72,10 +73,6 @@ async def setup_database():
     Endpoint per configurare il database Qdrant.
     """
     try:
-        # Carica la configurazione
-        with open("config/config.yaml", 'r') as f:
-            config = yaml.safe_load(f)
-
         # Elaborazione dei dati e configurazione del database
         print("Elaborazione dei documenti...")
         data_processor = DataProcessor()
@@ -118,8 +115,7 @@ async def process_csv():
             config = yaml.safe_load(f)
 
         # Inizializza i gestori
-        embedding_handler = EmbeddingHandler()
-        qdrant_handler = QdrantHandler()
+        qdrant_handler = QdrantHandler() 
 
         # Inizializza i tool che VegaMindAgent può usare
         tool_1 = ToolGenerateFilters()
@@ -143,7 +139,6 @@ async def process_csv():
 
         # Elabora le domande
         results = []
-        total_queries = len(questions_df)
 
         output_path = config["paths"]["output"]
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
