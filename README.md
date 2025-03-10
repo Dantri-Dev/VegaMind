@@ -10,6 +10,10 @@ It enables advanced **search and filtering** capabilities to retrieve dishes bas
   <img src="https://github.com/user-attachments/assets/9f9faf09-72ae-4747-9f5f-ff92e52b8e34" alt="Screenshot" width="480">
 </p>
 
+## Video Demonstration
+
+[VegaMind-VideoDemo.webm](https://github.com/user-attachments/assets/05eb93e3-0249-4f61-b709-96af9f5cc9c1)
+
 
 ## Overview
 
